@@ -7,9 +7,28 @@ from gymnasium import spaces, utils
 from typing import Optional, Tuple
 from miniworld.entity import Agent, Entity
 from gymnasium.core import ObsType
+import math
+import pyglet
+
+from pyglet.gl import (
+    GL_CULL_FACE,
+    GL_DEPTH_TEST,
+    glEnable,
+)
+
+from miniworld.opengl import FrameBuffer
 
 # Modified map class (because your map class was adjusted)
 from skimage.draw import line_aa
+
+KERNEL = np.ones([3,3])
+
+# Default wall height for room
+DEFAULT_WALL_HEIGHT = 2.74
+
+# Texture size/density in texels/meter
+TEX_DENSITY = 512
+
 
 class Map:
     def __init__(self, obs_height, obs_width, fluff, reward_mul=1, decay=1.0):
@@ -41,6 +60,9 @@ class Map:
         else:
             count = count_delta
         return count
+    
+    def show_map(self):
+        return self.map
 
     def show_all(self, dir, line_len=12):
         self.curr_pos = np.zeros([self.obs_height, self.obs_width])
@@ -55,7 +77,9 @@ class Map:
         self.curr_dir[rr, cc] = val
         all_ims = np.stack([self.map, self.curr_pos, self.curr_dir], axis=-1) * 255
         return all_ims.astype(np.uint8)
-
+    
+    def coverage(self):
+        return np.mean(self.map)
 
 class MiniWorldEnv_c(MiniWorldEnv):
     metadata = {
@@ -74,10 +98,7 @@ class MiniWorldEnv_c(MiniWorldEnv):
         window_width=800,
         window_height=600,
         include_maps=True,
-        coverage_thresh=0.7,
         patience=1000,
-        cam_view=1,
-        bw=False,
         decay_param=1.0,
         fluff=2,
         porosity=0.0,
@@ -86,30 +107,71 @@ class MiniWorldEnv_c(MiniWorldEnv):
         render_mode=None,
         view="agent",
     ):
+        # Init the parent MiniWorldEnv
         super().__init__(
             max_episode_steps=max_episode_steps,
             obs_width=obs_width,
             obs_height=obs_height,
-            obs_channels=obs_channels,
             window_width=window_width,
             window_height=window_height,
-            include_maps=include_maps,
             params=params,
             domain_rand=domain_rand,
             render_mode=render_mode,
             view=view,
         )
 
-        self.coverage_thresh = coverage_thresh
-        self.patience = patience
-        self.cam_view = cam_view
-        self.bw = bw
+        # Override attributes
+        self.porosity = porosity
+        self.include_maps = include_maps
         self.decay_param = decay_param
         self.fluff = fluff
-        self.porosity = porosity
+        self.max_patience = patience
+        self.obs_channels = obs_channels
 
-        # Override history map
-        self.histoire = Map(obs_height=self.obs_height, obs_width=self.obs_width, fluff=self.fluff, decay=self.decay_param)
+        # Override action_space
+        self.action_space = spaces.Box(low=-1, high=1, shape=(3,), dtype=float)
+
+        # Fix observation space if maps included
+        if self.include_maps:
+            self.observation_space = spaces.Box(
+                low=0, high=255,
+                shape=(self.obs_height, self.obs_width * 2, obs_channels),
+                dtype=np.uint8
+            )
+        else:
+            self.observation_space = spaces.Box(
+                low=0, high=255,
+                shape=(self.obs_height, self.obs_width, obs_channels),
+                dtype=np.uint8
+            )
+
+        # Initialize histoire
+        self.histoire = map(
+            obs_height=self.obs_height,
+            obs_width=self.obs_width,
+            fluff=self.fluff,
+            decay=self.decay_param,
+        )
+
+
+    def nearby(self, ent0, ent1=None):
+        """
+        Test if the two entities are near each other.
+        Used for "go to" or "put next" type tasks
+        """
+
+        if ent1 is None:
+            ent1 = self.agent
+
+        dist = np.linalg.norm(ent0.pos - ent1.pos)
+        new_dist = dist - (ent0.radius + ent1.radius + self.max_forward_step)
+        if new_dist < 0:
+            new_dist = 0
+        elif new_dist > 10:
+            new_dist = 0
+        else:
+            new_dist = int(((10 - new_dist) ** 2) * 2.55) 
+        return new_dist
 
     def move_agent(self, fwd_dist):
         fwd_dist *= 0.5
@@ -138,26 +200,72 @@ class MiniWorldEnv_c(MiniWorldEnv):
         return True
 
     def step(self, action):
+        """
+        Perform one action and update the simulation
+
+        Multiple rewards here - the lazy reward punishes turning as it returns a 0 reward -0.1 / 0
+            - sticky reward gives the agent a reward for repeating the previous action 0.5 / 0
+            - IC reward rewards getting a box, increases by 50 each time, resets to 0 upon new episode
+              (Sum(+50))/0
+            - progress reward rewards moving 9/-4
+            - expl reward rewards exploring
+        """
+
         self.step_count += 1
+        IC_reward = 0
+
         self.move_agent(action[0])
         self.strafe_agent(action[1])
         self.turn_agent(action[2])
 
+        # Generate the current camera image
         obs = self.render_obs()
 
         expl_reward = 10 * self.histoire.update(self.agent.pos)
 
         if self.include_maps:
             all_maps = self.histoire.show_all(self.agent.dir_vec)
-            if self.bw:
-                obs = np.mean(obs, axis=-1, keepdims=True)
-                all_maps = np.mean(all_maps, axis=-1, keepdims=True)
+            #axis -1 for older than dreamer models - NOTE
             obs = np.concatenate([obs, all_maps], axis=-2)
 
-        reward = -10 + expl_reward
-        done = self.step_count >= self.max_episode_steps
+        termination = False
+        truncation = False
 
-        return obs, reward, done, False, {}
+        to_remove = []
+        color = np.zeros(3)
+        for i, this_box in enumerate(self.boxes):
+            if self.near(this_box):
+                IC_reward += 50
+                self.entities.remove(this_box)
+                to_remove.append(i)
+                self.patience_count = 0
+            else:
+                if this_box.color == 'red':
+                    color[0] = self.nearby(this_box)
+                elif this_box.color == 'green':
+                    color[1] = self.nearby(this_box)
+                elif this_box.color == 'blue':
+                    color[2] = self.nearby(this_box)
+
+        nearby_reward = sum(color / 76.5)
+
+        obs[27:29, 28:36] = color    # Top edge (two pixels thick)
+        obs[35:37, 28:36] = color    # Bottom edge (two pixels thick)
+
+        for i in to_remove[::-1]:
+            self.boxes.pop(i)
+
+        if len(self.boxes) == 0:
+            IC_reward += 150
+            termination = True
+
+        # If the maximum time step count is reached
+        if self.step_count >= 4096: #self.max_episode_steps:
+            truncation = True
+
+        reward = -10 + expl_reward + IC_reward + nearby_reward
+        
+        return obs, reward, termination, truncation, {}
     
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[dict] = None
@@ -219,26 +327,16 @@ class MiniWorldEnv_c(MiniWorldEnv):
         self._render_static()
 
         # Generate the first camera image
-        if self.cam_view == 1:
-            obs = self.render_obs()
-        elif self.cam_view == 4:
-            obs = self.render_obs_4()
+        obs = self.render_obs()
 
         if self.include_maps:
             _ = self.histoire.update(self.agent.pos) 
             all_maps = self.histoire.show_all(self.agent.dir_vec)
-            # own_map = self.render_top_view()
-            # obs = np.concatenate([obs, all_maps, own_map], axis=-1)
-            if self.bw:
-                obs = np.mean(obs, axis=-1, keepdims=True)
-                all_maps = np.mean(all_maps, axis=-1, keepdims=True)
             #axis -1 for older than dreamer models - NOTE
             obs = np.concatenate([obs, all_maps], axis=-2)
 
         # Return first observation
         return obs, {}
-
-
 
 class MazeCA(MiniWorldEnv_c, utils.EzPickle):
     def __init__(self, num_rows=8, num_cols=8, room_size=3, max_episode_steps=None, **kwargs):
@@ -259,52 +357,107 @@ class MazeCA(MiniWorldEnv_c, utils.EzPickle):
             max_episode_steps=max_episode_steps,
             **kwargs,
         )
-
-        self.action_space = spaces.Box(-1, +1, (3,), dtype=float)
-
     def _gen_world(self):
         rows = []
+
+        # For each row
         for j in range(self.num_rows):
             row = []
+
+            # For each column
             for i in range(self.num_cols):
+
                 min_x = i * (self.room_size + self.gap_size)
                 max_x = min_x + self.room_size
+
                 min_z = j * (self.room_size + self.gap_size)
                 max_z = min_z + self.room_size
+
                 room = self.add_rect_room(
                     min_x=min_x,
                     max_x=max_x,
                     min_z=min_z,
                     max_z=max_z,
                     wall_tex="brick_wall",
+                    # floor_tex='asphalt'
                 )
                 row.append(room)
+
             rows.append(row)
 
         visited = set()
 
         def visit(i, j):
-            room = rows[j][i]
-            visited.add(room)
-            neighbors = [(0,1), (0,-1), (-1,0), (1,0)]
-            random.shuffle(neighbors)
-            for dj, di in neighbors:
-                ni, nj = i + di, j + dj
-                if 0 <= ni < self.num_cols and 0 <= nj < self.num_rows:
-                    neighbor = rows[nj][ni]
-                    if neighbor not in visited:
-                        if di == 0:
-                            self.connect_rooms(room, neighbor, min_x=room.min_x, max_x=room.max_x)
-                        else:
-                            self.connect_rooms(room, neighbor, min_z=room.min_z, max_z=room.max_z)
-                        visit(ni, nj)
+            """
+            Recursive backtracking maze construction algorithm
+            https://stackoverflow.com/questions/38502
+            """
 
+            room = rows[j][i]
+
+            visited.add(room)
+
+            # Reorder the neighbors to visit in a random order
+            orders = [(0, 1), (0, -1), (-1, 0), (1, 0)]
+            assert 4 <= len(orders)
+            neighbors = []
+
+            while len(neighbors) < 4:
+                elem = orders[self.np_random.choice(len(orders))]
+                orders.remove(elem)
+                neighbors.append(elem)
+
+            # For each possible neighbor
+            for dj, di in neighbors:
+                ni = i + di
+                nj = j + dj
+
+                if nj < 0 or nj >= self.num_rows:
+                    continue
+                if ni < 0 or ni >= self.num_cols:
+                    continue
+
+                neighbor = rows[nj][ni]
+
+                if neighbor in visited:
+                    continue
+
+                if di == 0:
+                    self.connect_rooms(
+                        room, neighbor, min_x=room.min_x, max_x=room.max_x
+                    )
+                elif dj == 0:
+                    self.connect_rooms(
+                        room, neighbor, min_z=room.min_z, max_z=room.max_z
+                    )
+
+                visit(ni, nj)
+
+        # Generate the maze starting from the top-left corner
         visit(0, 0)
 
-        self.boxes = [
-            self.place_entity(Box(color="red")),
-            self.place_entity(Box(color="green")),
-            self.place_entity(Box(color="blue")),
-        ]
+        for j in range(self.num_rows):
+            for i in range(self.num_cols):
+                room = rows[j][i]
+
+                # Look only at right and bottom neighbors to avoid duplicating connections
+                if i < self.num_cols - 1:
+                    neighbor = rows[j][i + 1]
+                    if self.np_random.random() < self.porosity:
+                        self.connect_rooms(
+                            room, neighbor, min_z=room.min_z, max_z=room.max_z
+                        )
+
+                if j < self.num_rows - 1:
+                    neighbor = rows[j + 1][i]
+                    if self.np_random.random() < self.porosity:
+                        self.connect_rooms(
+                            room, neighbor, min_x=room.min_x, max_x=room.max_x
+                        )
+                        
+        self.boxes = []
+        self.boxes.append(self.place_entity(Box(color="red")))
+        self.boxes.append(self.place_entity(Box(color="green")))
+        self.boxes.append(self.place_entity(Box(color="blue")))
 
         self.place_agent()

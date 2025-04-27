@@ -107,6 +107,14 @@ class MiniWorldEnv_c(MiniWorldEnv):
         render_mode=None,
         view="agent",
     ):
+        # Override attributes
+        self.porosity = porosity
+        self.include_maps = include_maps
+        self.decay_param = decay_param
+        self.fluff = fluff
+        self.max_patience = patience
+        self.obs_channels = obs_channels
+
         # Init the parent MiniWorldEnv
         super().__init__(
             max_episode_steps=max_episode_steps,
@@ -119,14 +127,6 @@ class MiniWorldEnv_c(MiniWorldEnv):
             render_mode=render_mode,
             view=view,
         )
-
-        # Override attributes
-        self.porosity = porosity
-        self.include_maps = include_maps
-        self.decay_param = decay_param
-        self.fluff = fluff
-        self.max_patience = patience
-        self.obs_channels = obs_channels
 
         # Override action_space
         self.action_space = spaces.Box(low=-1, high=1, shape=(3,), dtype=float)

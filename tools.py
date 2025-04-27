@@ -222,10 +222,11 @@ def simulate(
         for key, value in new_result.items():
             new_result[key] = convert(value)
         temp_buffer.extend(new_result.unsqueeze(0))
-        if agent.buffer_filled_once == True:
-            agent._plan_b._add_to_buffer(mode='end',
-                                            reward = temp_buffer['reward'][-1].float(),
-                                            done = done)
+        if agent._use_plan == True:
+            if agent.buffer_filled_once == True:
+                agent._plan_b._add_to_buffer(mode='end',
+                                                reward = temp_buffer['reward'][-1].float(),
+                                                done = done)
         decoded = next_state.pop('pixels')
         new_result['image'], new_result['map'] = decoded[..., :64, :], decoded[..., 64:, :]
         del(decoded)
@@ -239,8 +240,9 @@ def simulate(
         obs['is_terminal'] = result['done'].item()
         step+=1
         if done:
-            if agent.buffer_filled_once == True:
-                agent._plan_b.process_all()
+            if agent._use_plan:
+                if agent.buffer_filled_once == True:
+                    agent._plan_b.process_all()
             episode += 1
             print('Episodes done: ' + str(episode))
             length = len(temp_buffer["reward"]) - 1

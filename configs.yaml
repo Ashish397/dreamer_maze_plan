@@ -4,6 +4,7 @@ defaults:
   device: 'cuda:0'
   precision: 16
   log_every: 128
+  use_plan_behavior: True
 
   # Environment
   envs: 1

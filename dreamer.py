@@ -43,6 +43,7 @@ class Dreamer(nn.Module):
         self._update_count = 0
 
         #Plan parameters
+        self._use_plan = config.use_plan
         self._plan_choices = config.plan_choices
         self._planned_traj = None
 
@@ -64,26 +65,28 @@ class Dreamer(nn.Module):
         self._metrics = {}
         self._update_count_plan = 0
 
-        self._plan_b = expl.PlanBehavior(
-            config=self._config,
-            world_model=self._wm,
-            taskbehavior=self._task_behavior
-        )
+        if self._use_plan:
+            self._plan_b = expl.PlanBehavior(
+                config=self._config,
+                world_model=self._wm,
+                taskbehavior=self._task_behavior
+            )
 
-        self._planner_train_step = 0
+            self._planner_train_step = 0
 
     def __call__(self, obs, reset, this_batch, given_step, state=None, training=True, data_train=True):
         step = self._step
-        self._planner_train_step += 1
         if data_train:
             for _ in range(self._train_steps):
                 self._train(this_batch)
                 self._update_count += 1
                 self._metrics["update_count"] = self._update_count #count the number of times trained
-        if (self._planner_train_step % self._plan_b.train_every == 0) and (self.buffer_filled_once == True):
-            self._plan_b._train(logger=self._logger) #train the planner and count it
-            self._update_count_plan += 1
-            self._metrics["update_count_plan"] = self._update_count_plan #count the number of times trained
+        if self._use_plan==True:
+            self._planner_train_step += 1
+            if (self._planner_train_step % self._plan_b.train_every == 0) and (self.buffer_filled_once == True):
+                self._plan_b._train(logger=self._logger) #train the planner and count it
+                self._update_count_plan += 1
+                self._metrics["update_count_plan"] = self._update_count_plan #count the number of times trained
         if self._should_log(step):
             for name, values in self._metrics.items():
                 if isinstance(values, int) or isinstance(values, float):
@@ -103,53 +106,60 @@ class Dreamer(nn.Module):
                 self._metrics[name] = []
         
         if (self.buffer_filled_once == True):
-            #What would the plan params be?
-            meta_sec_actions, ap_logprob_sec, start_state = self.meta_policy_sec(obs, state, given_step)
-            
-            #Should we enact a new plan?
-            action_plan, ap_logprob_prim, start_state = self.meta_policy_prim(start_state, meta_sec_actions)
-            this_prob = action_plan[0].detach().cpu().item() / 4
+            if self._use_plan == True:
+                #What would the plan params be?
+                meta_sec_actions, ap_logprob_sec, start_state = self.meta_policy_sec(obs, state, given_step)
+                
+                #Should we enact a new plan?
+                action_plan, ap_logprob_prim, start_state = self.meta_policy_prim(start_state, meta_sec_actions)
+                this_prob = action_plan[0].detach().cpu().item() / 4
 
-            self._metrics.setdefault("_plan_prob_metric", []).append(this_prob)
+                self._metrics.setdefault("_plan_prob_metric", []).append(this_prob)
 
-            if random.random() > (this_prob * this_prob):
-                #No need to save the secondary metrics if a plan wasn't enacted
-                meta_sec_actions = None
-                ap_logprob_sec = None
-                implemented = False
+                if random.random() > (this_prob * this_prob):
+                    #No need to save the secondary metrics if a plan wasn't enacted
+                    meta_sec_actions = None
+                    ap_logprob_sec = None
+                    implemented = False
+                else:
+                    #We go into plan
+                    self._in_plan = True
+                    #A plan will be enacted
+                    implemented = True
+                    #A new traj will be planned
+                    self._replan_traj = True
+                    #Get the actions out of the object
+                    self._plan_hor, self._ent_weight = meta_sec_actions[0]
+                    #Convert them into real parameters
+                    self._plan_hor = int(((self._plan_hor + 1) / 5) * 15)
+                    self._ent_weight = float(self._ent_weight / 4)
+                    #Log them
+                    self._metrics.setdefault("_plan_hor_metric", []).append(self._plan_hor)
+                    self._metrics.setdefault("_plan_ent_metric", []).append(self._ent_weight)
+
+                self._plan_b._add_to_buffer(
+                    observation = start_state,
+                    action = action_plan,
+                    sample_log_prob = ap_logprob_prim,
+                    action_sec = meta_sec_actions,
+                    sample_log_prob_sec = ap_logprob_sec,
+                    implemented = implemented,
+                    mode = 'begin'
+                )
+
+                #use plan / base dreamer depending on params
+                if self._in_plan:
+                    policy_output, state = self._planned_policy(obs, state)
+                    self._metrics.setdefault("_plan_steps_metric", []).append(1)
+                else:
+                    policy_output, state = self._policy(obs, state, training)
+                    self._metrics.setdefault("_plan_steps_metric", []).append(0)
             else:
-                #We go into plan
-                self._in_plan = True
-                #A plan will be enacted
-                implemented = True
-                #A new traj will be planned
-                self._replan_traj = True
-                #Get the actions out of the object
-                self._plan_hor, self._ent_weight = meta_sec_actions[0]
-                #Convert them into real parameters
-                self._plan_hor = int(((self._plan_hor + 1) / 5) * 15)
-                self._ent_weight = float(self._ent_weight / 4)
-                #Log them
-                self._metrics.setdefault("_plan_hor_metric", []).append(self._plan_hor)
-                self._metrics.setdefault("_plan_ent_metric", []).append(self._ent_weight)
-
-            self._plan_b._add_to_buffer(
-                observation = start_state,
-                action = action_plan,
-                sample_log_prob = ap_logprob_prim,
-                action_sec = meta_sec_actions,
-                sample_log_prob_sec = ap_logprob_sec,
-                implemented = implemented,
-                mode = 'begin'
-            )
-
-            if self._in_plan:
-                policy_output, state = self._planned_policy(obs, state)
-                self._metrics.setdefault("_plan_steps_metric", []).append(1)
-            else:
+                #always use base dreamer
                 policy_output, state = self._policy(obs, state, training)
                 self._metrics.setdefault("_plan_steps_metric", []).append(0)
         else:
+            #random actions
             action = torch.rand((self._config.envs, 3), device=self._config.device) * 2 - 1
             policy_output = {"action": action, "logprob": torch.zeros((self._config.envs, 1), device=self._config.device)}        
         policy_output['action'] = policy_output['action'].squeeze()
@@ -212,9 +222,10 @@ class Dreamer(nn.Module):
         obs = self._wm.preprocess(obs)
         embed = self._wm.v_encoder(obs) + self._wm.m_encoder(obs)
         latent, _ = self._wm.dynamics.obs_step(latent, action, embed.unsqueeze(0), obs["is_first"])
-        if (dontadd == False) and (self.buffer_filled_once == True):
-            self._plan_b._add_to_buffer(mode = 'entropy', 
-                                            entropy = self._wm.dynamics.get_dist(latent).entropy())
+        if self._use_plan == True:
+            if (dontadd == False) and (self.buffer_filled_once == True):
+                self._plan_b._add_to_buffer(mode = 'entropy', 
+                                                entropy = self._wm.dynamics.get_dist(latent).entropy())
         if self._config.eval_state_mean:
             latent["stoch"] = latent["mean"]
         feat = self._wm.dynamics.get_feat(latent)

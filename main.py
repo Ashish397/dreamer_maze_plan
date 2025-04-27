@@ -252,6 +252,7 @@ def main():
         print('Buffer pre-filled!')
     except:
         agent.buffer_filled_once = False
+        print('Buffer not filled')
 
     # ============================================================================
     #   REPRODUCABILITY

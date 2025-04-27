@@ -185,21 +185,13 @@ def main():
     #   GLOBALS
     # ----------------------------------------------------------------------------
 
-    # # Initialize the replay buffer
-    # replay_buffer = ReplayBuffer(
-    #     storage=LazyMemmapStorage(
-    #         max_size=int(config.dataset_size / config.time_limit),
-    #         scratch_dir=Path(data_path / exp_date)
-    #     ),
-    #     prefetch=1,
-    #     batch_size=torch.Size([256, config.time_limit]),
-    # )
-
+    # Initialize the replay buffer
     replay_buffer = ReplayBuffer(
-        storage=LazyTensorStorage(
+        storage=LazyMemmapStorage(
             max_size=int(config.dataset_size / (config.time_limit * 2)),
+            scratch_dir=Path(data_path / exp_date)
         ),
-        prefetch=8,
+        prefetch=1,
         batch_size=torch.Size([256, config.time_limit]),
     )
 
@@ -298,8 +290,6 @@ def main():
     # ----------------------------------------------------------------------------
 
     state = None
-    episodes_done = 0
-
     while agent._step < config.steps:
         logger.write()
         print("Start training.")
@@ -313,12 +303,6 @@ def main():
             steps = agent._config.time_limit,
             state = state,
             config=config)
-        
-        if episodes_done >= 30:
-            print(f"⏳ Dumping replay buffer after {episodes_done} episodes...")
-            replay_buffer.storage._storage.save(f"{data_path}/{exp_date}")
-            episodes_done = 0
-            
         items_to_save = {
             "agent_state_dict": agent.state_dict(),
             "optims_state_dict": tools.recursively_collect_optim_state_dict(agent),

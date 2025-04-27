@@ -149,11 +149,10 @@ class Dreamer(nn.Module):
             else:
                 policy_output, state = self._policy(obs, state, training)
                 self._metrics.setdefault("_plan_steps_metric", []).append(0)
-
-            policy_output['action'] = policy_output['action'].squeeze()
         else:
             action = torch.rand((self._config.envs, 3), device=self._config.device) * 2 - 1
             policy_output = {"action": action, "logprob": torch.zeros((self._config.envs, 1), device=self._config.device)}        
+        policy_output['action'] = policy_output['action'].squeeze()
         if data_train:
             self._step += 1 if type(reset) == bool else len(reset)
             self._logger.step = self._config.action_repeat * self._step

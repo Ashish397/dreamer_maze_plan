@@ -148,7 +148,7 @@ class MiniWorldEnv_c(MiniWorldEnv):
             )
 
         # Initialize histoire
-        self.histoire = map(
+        self.histoire = Map(
             obs_height=self.obs_height,
             obs_width=self.obs_width,
             fluff=self.fluff,
@@ -292,7 +292,7 @@ class MiniWorldEnv_c(MiniWorldEnv):
         # List of rooms in the world
         self.rooms = []
 
-        self.histoire = map(obs_height=self.obs_height, obs_width=self.obs_width, fluff = self.fluff, decay = self.decay_param)
+        self.histoire = Map(obs_height=self.obs_height, obs_width=self.obs_width, fluff = self.fluff, decay = self.decay_param)
 
         # Wall segments for collision detection
         # Shape is (N, 2, 3)

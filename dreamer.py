@@ -212,7 +212,7 @@ class Dreamer(nn.Module):
         obs = self._wm.preprocess(obs)
         embed = self._wm.v_encoder(obs) + self._wm.m_encoder(obs)
         latent, _ = self._wm.dynamics.obs_step(latent, action, embed.unsqueeze(0), obs["is_first"])
-        if not dontadd:
+        if (dontadd == False) and (self.buffer_filled_once == True):
             self._plan_b._add_to_buffer(mode = 'entropy', 
                                             entropy = self._wm.dynamics.get_dist(latent).entropy())
         if self._config.eval_state_mean:

@@ -253,6 +253,7 @@ def simulate(
             ind_newest = cache.extend(temp_buffer.storage[:].unsqueeze(0))
             if len(cache.storage) >= cache.storage.max_size:
                 agent.buffer_filled_once = True
+                print('Buffer filled succesfully')
             logger.scalar("dataset_reward_sum", float(cache.storage["reward"].squeeze().to(torch.float32).sum()))
             for key in list(temp_buffer.storage[0].keys()):
                 if "log_" in key:

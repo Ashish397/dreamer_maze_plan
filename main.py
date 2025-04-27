@@ -159,11 +159,11 @@ def main():
     exp_date = config.exp_date
     path_root = config.path_root
     data_path_preloaded = config.data_path_preloaded
-
-    results_path = f"{path_root}\\{experiment_name}\\results"
-    save_path = f"{path_root}\\{experiment_name}\\saved_models"
-    logdir = Path(f"{path_root}\\{experiment_name}\\logs")
-    data_path = f"{path_root}\\{experiment_name}\\dataset"
+    
+    results_path = Path(path_root) / experiment_name / "results"
+    save_path = Path(path_root) / experiment_name / "saved_models"
+    logdir = Path(path_root) / experiment_name / "logs"
+    data_path = Path(path_root) / experiment_name / "dataset"
 
     for p in [results_path, f"{results_path}\\{exp_date}", save_path, logdir, data_path]:
         os.makedirs(p, exist_ok=True)
@@ -186,7 +186,7 @@ def main():
     replay_buffer = ReplayBuffer(
         storage=LazyMemmapStorage(
             max_size=int(config.dataset_size / config.time_limit),
-            scratch_dir=data_path + '//' + exp_date
+            scratch_dir=Path(data_path / exp_date)
         ),
         prefetch=1,
         batch_size=torch.Size([256, config.time_limit]),
@@ -243,7 +243,7 @@ def main():
     try:
         load_data(
             replay_buffer=replay_buffer,
-            data_path=data_path_preloaded + '//random_data',
+            data_path=Path(data_path_preloaded / 'random_data'),
         )
         agent.buffer_filled_once = True
     except:

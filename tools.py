@@ -246,7 +246,8 @@ def simulate(
             length = len(temp_buffer["reward"]) - 1
             score = float(np.array(temp_buffer["reward"]).sum())
             # record logs given from environments
-            while len(temp_buffer) < cache.storage['done'].shape[1]:
+            #HARDCODED VARIABLE - CHANGE
+            while len(temp_buffer) < 4096:
                 temp_buffer.extend(torch.zeros_like(temp_buffer.storage[0:1]))
                 step+=1
             ind_newest = cache.extend(temp_buffer.storage[:].unsqueeze(0))

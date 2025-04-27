@@ -347,7 +347,7 @@ class MazeCA(MiniWorldEnv_c, utils.EzPickle):
 
         super().__init__(
             max_episode_steps=max_episode_steps or num_rows * num_cols * 24,
-            porosity=kwargs.get("porosity", 0.0),
+            porosity=kwargs.pop("porosity", 0.0),
             **kwargs,
         )
         utils.EzPickle.__init__(

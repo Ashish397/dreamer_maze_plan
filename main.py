@@ -10,7 +10,7 @@
 # ============================================================================
 #   IMPORTS
 # ----------------------------------------------------------------------------
-import register_environments
+import register_envs
 
 import shutil
 import zipfile

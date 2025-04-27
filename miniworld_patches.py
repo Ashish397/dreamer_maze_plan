@@ -114,6 +114,8 @@ class MiniWorldEnv_c(MiniWorldEnv):
         self.fluff = fluff
         self.max_patience = patience
         self.obs_channels = obs_channels
+        self.obs_width = obs_width
+        self.obs_height = obs_height
 
         # Init the parent MiniWorldEnv
         super().__init__(

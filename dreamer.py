@@ -127,8 +127,8 @@ class Dreamer(nn.Module):
             #Get the actions out of the object
             self._plan_hor, self._ent_weight = meta_sec_actions[0]
             #Convert them into real parameters
-            self._plan_hor = 12 #int(((self._plan_hor + 1) / 5) * 15) #CHANGE_CHECK
-            self._ent_weight = 0.4 #float(self._ent_weight / 4) #CHANGE_CHECK
+            self._plan_hor = int(((self._plan_hor + 1) / 5) * 15)
+            self._ent_weight = float(self._ent_weight / 4)
             #Log them
             self._metrics.setdefault("_plan_hor_metric", []).append(self._plan_hor)
             self._metrics.setdefault("_plan_ent_metric", []).append(self._ent_weight)

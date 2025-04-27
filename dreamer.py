@@ -101,39 +101,38 @@ class Dreamer(nn.Module):
                     pass  # or handle empty lists differently
 
                 self._metrics[name] = []
-                
-        #What would the plan params be?
-        meta_sec_actions, ap_logprob_sec, start_state = self.meta_policy_sec(obs, state, given_step)
         
-        #Should we enact a new plan?
-        action_plan, ap_logprob_prim, start_state = self.meta_policy_prim(start_state, meta_sec_actions)
-        this_prob = action_plan[0].detach().cpu().item() / 4
+        if (self.buffer_filled_once == True):
+            #What would the plan params be?
+            meta_sec_actions, ap_logprob_sec, start_state = self.meta_policy_sec(obs, state, given_step)
+            
+            #Should we enact a new plan?
+            action_plan, ap_logprob_prim, start_state = self.meta_policy_prim(start_state, meta_sec_actions)
+            this_prob = action_plan[0].detach().cpu().item() / 4
 
-        self._metrics.setdefault("_plan_prob_metric", []).append(this_prob)
+            self._metrics.setdefault("_plan_prob_metric", []).append(this_prob)
 
-        #:-1539
-        if (random.random() > (this_prob * this_prob)) or (self.buffer_filled_once == False):
-            #No need to save the secondary metrics if a plan wasn't enacted
-            meta_sec_actions = None
-            ap_logprob_sec = None
-            implemented = False
-        else:
-            #We go into plan
-            self._in_plan = True
-            #A plan will be enacted
-            implemented = True
-            #A new traj will be planned
-            self._replan_traj = True
-            #Get the actions out of the object
-            self._plan_hor, self._ent_weight = meta_sec_actions[0]
-            #Convert them into real parameters
-            self._plan_hor = int(((self._plan_hor + 1) / 5) * 15)
-            self._ent_weight = float(self._ent_weight / 4)
-            #Log them
-            self._metrics.setdefault("_plan_hor_metric", []).append(self._plan_hor)
-            self._metrics.setdefault("_plan_ent_metric", []).append(self._ent_weight)
+            if random.random() > (this_prob * this_prob):
+                #No need to save the secondary metrics if a plan wasn't enacted
+                meta_sec_actions = None
+                ap_logprob_sec = None
+                implemented = False
+            else:
+                #We go into plan
+                self._in_plan = True
+                #A plan will be enacted
+                implemented = True
+                #A new traj will be planned
+                self._replan_traj = True
+                #Get the actions out of the object
+                self._plan_hor, self._ent_weight = meta_sec_actions[0]
+                #Convert them into real parameters
+                self._plan_hor = int(((self._plan_hor + 1) / 5) * 15)
+                self._ent_weight = float(self._ent_weight / 4)
+                #Log them
+                self._metrics.setdefault("_plan_hor_metric", []).append(self._plan_hor)
+                self._metrics.setdefault("_plan_ent_metric", []).append(self._ent_weight)
 
-        if self.buffer_filled_once == True:
             self._plan_b._add_to_buffer(
                 observation = start_state,
                 action = action_plan,
@@ -144,14 +143,20 @@ class Dreamer(nn.Module):
                 mode = 'begin'
             )
 
-        if self._in_plan and (self.buffer_filled_once == True):
-            policy_output, state = self._planned_policy(obs, state)
-            self._metrics.setdefault("_plan_steps_metric", []).append(1)
-        else:
-            policy_output, state = self._policy(obs, state, training)
-            self._metrics.setdefault("_plan_steps_metric", []).append(0)
+            if self._in_plan:
+                policy_output, state = self._planned_policy(obs, state)
+                self._metrics.setdefault("_plan_steps_metric", []).append(1)
+            else:
+                policy_output, state = self._policy(obs, state, training)
+                self._metrics.setdefault("_plan_steps_metric", []).append(0)
 
-        policy_output['action'] = policy_output['action'].squeeze()
+            policy_output['action'] = policy_output['action'].squeeze()
+        else:
+            # Take random action
+            action_dim = self._act_space.shape[0]  # assuming continuous action space
+            action = torch.rand((self._config.envs, action_dim), device=self._config.device) * 2 - 1
+            # make action between -1 and 1
+            policy_output = {"action": action, "logprob": torch.zeros((self._config.envs, 1), device=self._config.device)}
         
         if data_train:
             self._step += 1 if type(reset) == bool else len(reset)

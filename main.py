@@ -246,9 +246,10 @@ def main():
     try:
         load_data(
             replay_buffer=replay_buffer,
-            data_path=Path(data_path_preloaded / 'random_data'),
+            data_path=Path(data_path / data_path_preloaded),
         )
         agent.buffer_filled_once = True
+        print('Buffer pre-filled!')
     except:
         agent.buffer_filled_once = False
 

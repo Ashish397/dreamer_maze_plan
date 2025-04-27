@@ -4,6 +4,9 @@ from miniworld.params import DEFAULT_PARAMS
 import numpy as np
 import random
 from gymnasium import spaces, utils
+from typing import Optional, Tuple
+from miniworld.entity import Agent, Entity
+from gymnasium.core import ObsType
 
 # Modified map class (because your map class was adjusted)
 from skimage.draw import line_aa
@@ -155,6 +158,86 @@ class MiniWorldEnv_c(MiniWorldEnv):
         done = self.step_count >= self.max_episode_steps
 
         return obs, reward, done, False, {}
+    
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> Tuple[ObsType, dict]:
+        """
+        Reset the simulation at the start of a new episode
+        This also randomizes many environment parameters (domain randomization)
+        """
+        super().reset(seed=seed)
+
+        # Step count since episode start
+        self.step_count = 0
+        self.patience_count = 0
+        self.IC_reward = 0
+
+        # Create the agent
+        self.agent = Agent()
+
+        # List of entities contained
+        self.entities = []
+
+        # List of rooms in the world
+        self.rooms = []
+
+        self.histoire = map(obs_height=self.obs_height, obs_width=self.obs_width, fluff = self.fluff, decay = self.decay_param)
+
+        # Wall segments for collision detection
+        # Shape is (N, 2, 3)
+        self.wall_segs = []
+        # Generate the world
+        self._gen_world()
+
+        # Check if domain randomization is enabled or not
+        rand = self.np_random if self.domain_rand else None
+
+        # Randomize elements of the world (domain randomization)
+        self.params.sample_many(
+            rand, self, ["sky_color", "light_pos", "light_color", "light_ambient"]
+        )
+
+        # Get the max forward step distance
+        self.max_forward_step = self.params.get_max("forward_step")
+
+        # Randomize parameters of the entities
+        for ent in self.entities:
+            ent.randomize(self.params, rand)
+
+        # Compute the min and max x, z extents of the whole floorplan
+        self.min_x = min(r.min_x for r in self.rooms)
+        self.max_x = max(r.max_x for r in self.rooms)
+        self.min_z = min(r.min_z for r in self.rooms)
+        self.max_z = max(r.max_z for r in self.rooms)
+
+        # Generate static data
+        if len(self.wall_segs) == 0:
+            self._gen_static_data()
+
+        # Pre-compile static parts of the environment into a display list
+        self._render_static()
+
+        # Generate the first camera image
+        if self.cam_view == 1:
+            obs = self.render_obs()
+        elif self.cam_view == 4:
+            obs = self.render_obs_4()
+
+        if self.include_maps:
+            _ = self.histoire.update(self.agent.pos) 
+            all_maps = self.histoire.show_all(self.agent.dir_vec)
+            # own_map = self.render_top_view()
+            # obs = np.concatenate([obs, all_maps, own_map], axis=-1)
+            if self.bw:
+                obs = np.mean(obs, axis=-1, keepdims=True)
+                all_maps = np.mean(all_maps, axis=-1, keepdims=True)
+            #axis -1 for older than dreamer models - NOTE
+            obs = np.concatenate([obs, all_maps], axis=-2)
+
+        # Return first observation
+        return obs, {}
+
 
 
 class MazeCA(MiniWorldEnv_c, utils.EzPickle):

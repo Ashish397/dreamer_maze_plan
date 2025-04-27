@@ -152,12 +152,8 @@ class Dreamer(nn.Module):
 
             policy_output['action'] = policy_output['action'].squeeze()
         else:
-            # Take random action
-            action_dim = self._act_space.shape[0]  # assuming continuous action space
-            action = torch.rand((self._config.envs, action_dim), device=self._config.device) * 2 - 1
-            # make action between -1 and 1
-            policy_output = {"action": action, "logprob": torch.zeros((self._config.envs, 1), device=self._config.device)}
-        
+            action = torch.rand((self._config.envs, 3), device=self._config.device) * 2 - 1
+            policy_output = {"action": action, "logprob": torch.zeros((self._config.envs, 1), device=self._config.device)}        
         if data_train:
             self._step += 1 if type(reset) == bool else len(reset)
             self._logger.step = self._config.action_repeat * self._step

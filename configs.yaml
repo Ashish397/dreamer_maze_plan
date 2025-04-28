@@ -77,9 +77,9 @@ defaults:
 
   # experiment_folders:
   exp_name: 'plan_tests'
-  exp_date: '02_poro_ablate_rigid_seed_409' #FOLLOW #CHANGE_CHECK
-  path_root: 'C:\\Users\\as1748\\projects\\dreamer_w_ant_cur\\dream3_uq_ent_head_single_disc'
-  data_path_preloaded: 'C:\\Users\\as1748\\projects\\dreamer_w_ant_cur\\dream3_uq_ent_head_rand_ppoplan_length_disc\\plan_tests\\dataset'
+  exp_date: '00_poro_seed_409'
+  path_root: '/home/shadeform/dreamer_maze_plan'
+  data_path_preloaded: ''
 
   env_name: 'MiniWorld-MazeCA-v0'
   
@@ -112,4 +112,4 @@ defaults:
     include_maps: True
     fluff: 2
     decay_param: 1.0
-    porosity: 0.2
+    porosity: 0.0

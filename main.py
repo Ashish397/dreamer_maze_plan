@@ -188,7 +188,7 @@ def main():
     # Initialize the replay buffer
     replay_buffer = ReplayBuffer(
         storage=LazyMemmapStorage(
-            max_size=int(config.dataset_size / (config.time_limit * 2)),
+            max_size=int(config.dataset_size / config.time_limit),
             scratch_dir=Path(data_path / exp_date)
         ),
         prefetch=1,

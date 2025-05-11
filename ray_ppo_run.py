@@ -1,6 +1,11 @@
 # ============================================================================
 #   IMPORTS
 # ----------------------------------------------------------------------------
+import pyglet
+import os
+os.environ['PYGLET_HEADLESS'] = 'False'
+pyglet.options['headless'] = True
+
 import register_envs
 
 import shutil
@@ -22,11 +27,6 @@ import tools
 
 import gymnasium as gym
 import numpy as np
-
-import os
-os.environ['PYGLET_HEADLESS'] = 'False'
-pyglet.options['headless'] = True
-
 
 import ray
 

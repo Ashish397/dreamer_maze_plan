@@ -68,7 +68,7 @@ def make_config(path="ppo_configs.yaml"):
 
     config = {}
     recursive_update(config, config_yaml.get('defaults', {}))  # safe fallback
-    config["ppo_config"] = config_yaml.get("ppo_config", {})   # NEW - pull PPO config!
+    config["ppo_config"] = dict_to_namespace(config_yaml.get("ppo_config", {}))
 
     return dict_to_namespace(config)
 

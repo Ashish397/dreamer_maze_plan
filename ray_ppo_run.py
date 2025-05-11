@@ -215,7 +215,7 @@ print("Git commit:", get_git_commit())
 
 def main():
     total_steps = 0
-    target_steps = int(config.ppo_config['steps'])
+    target_steps = int(config.ppo_config['ppo_steps'])
 
     while total_steps < target_steps:
         result = trainer.train()

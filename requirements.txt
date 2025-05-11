@@ -13,3 +13,4 @@ pyglet==1.5.27
 opencv-python==4.9.0.80
 matplotlib==3.7.5
 ruamel.yaml==0.18.6
+ray==2.9.3

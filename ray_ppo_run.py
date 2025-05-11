@@ -68,7 +68,7 @@ def make_config(path="ppo_configs.yaml"):
 
     config = {}
     recursive_update(config, config_yaml.get('defaults', {}))  # safe fallback
-    config["ppo_config"] = dict_to_namespace(config_yaml.get("ppo_config", {}))
+    config["ppo_config"] = config_yaml.get("ppo_config", {})
 
     return dict_to_namespace(config)
 
@@ -215,7 +215,7 @@ print("Git commit:", get_git_commit())
 
 def main():
     total_steps = 0
-    target_steps = int(config.ppo_config.steps)
+    target_steps = int(config.ppo_config['steps'])
 
     while total_steps < target_steps:
         result = trainer.train()

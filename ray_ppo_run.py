@@ -10,7 +10,6 @@ import datetime
 import subprocess
 
 import gc
-import os
 import pathlib
 import torch
 
@@ -25,6 +24,9 @@ import gymnasium as gym
 import numpy as np
 
 import os
+os.environ['PYGLET_HEADLESS'] = 'False'
+pyglet.options['headless'] = True
+
 
 import ray
 
